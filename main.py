@@ -5,7 +5,7 @@ import math
 import re
 import traceback
 
-# --- 崩溃记录 ---
+# --- 崩溃拦截 ---
 def exception_hook(exctype, value, tb):
     error_msg = "".join(traceback.format_exception(exctype, value, tb))
     with open("crash_log.txt", "w", encoding='utf-8') as f:
@@ -16,11 +16,11 @@ sys.excepthook = exception_hook
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, 
                              QListWidget, QSlider, QStackedWidget, QTextEdit, 
-                             QMessageBox, QFrame, QGraphicsDropShadowEffect, QSizeGrip)
+                             QMessageBox, QFrame, QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt, QUrl, QPoint, QPointF, QTimer, QPropertyAnimation, pyqtProperty, QEasingCurve, QSize
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtGui import (QIcon, QPixmap, QPainter, QColor, QPen, QFont, 
-                         QBrush, QLinearGradient, QTextCursor, QPainterPath, QMouseEvent)
+                         QBrush, QLinearGradient, QTextCursor, QPainterPath, QTextBlockFormat)
 
 # --- 全局配置 ---
 SUPPORTED_FORMATS = (
@@ -39,7 +39,6 @@ class DynamicBackground(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_anim)
         self.timer.start(30)
-        self.offset = 0
         for _ in range(60):
             self.particles.append({
                 'x': random.random(), 'y': random.random(),
@@ -48,8 +47,6 @@ class DynamicBackground(QWidget):
             })
 
     def update_anim(self):
-        self.offset += 0.002
-        if self.offset > 1: self.offset = 0
         for p in self.particles:
             p['x'] += p['vx']; p['y'] += p['vy']
             if p['x']<0 or p['x']>1: p['vx']*=-1
@@ -61,18 +58,52 @@ class DynamicBackground(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         grad = QLinearGradient(0, 0, w, h)
-        grad.setColorAt(0, QColor(10, 10, 15))
-        grad.setColorAt(0.5, QColor(15, 15, 25))
-        grad.setColorAt(1, QColor(5, 5, 10))
+        grad.setColorAt(0, QColor(10, 10, 15)); grad.setColorAt(1, QColor(5, 5, 10))
         painter.fillRect(0, 0, w, h, grad)
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
             c = QColor(ACCENT_COLOR); c.setAlpha(int(p['alpha']))
             painter.setBrush(QBrush(c))
-            px = p['x'] * w; py = p['y'] * h; s = p['size']
-            painter.drawEllipse(QPointF(px, py), s, s)
+            painter.drawEllipse(QPointF(p['x']*w, p['y']*h), p['size'], p['size'])
 
-# --- 2. 旋转黑胶 ---
+# --- 2. 极简线条图标生成器 (新) ---
+class MinimalArtGenerator:
+    @staticmethod
+    def draw_icon(size=64):
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 绘制极简线条音波
+        pen = QPen(QColor(ACCENT_COLOR))
+        pen.setWidth(int(size/12))
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        
+        # 三条竖线代表音律
+        h = size
+        w = size
+        p.drawLine(int(w*0.3), int(h*0.4), int(w*0.3), int(h*0.6))
+        p.drawLine(int(w*0.5), int(h*0.2), int(w*0.5), int(h*0.8))
+        p.drawLine(int(w*0.7), int(h*0.4), int(w*0.7), int(h*0.6))
+        
+        p.end()
+        return QIcon(pix)
+
+    @staticmethod
+    def draw_vinyl_placeholder(size=300):
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QBrush(QColor(20, 20, 20)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(0, 0, size, size)
+        p.end()
+        return pix
+
+# --- 3. 旋转黑胶 ---
 class VinylRecord(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,56 +111,43 @@ class VinylRecord(QWidget):
         self.angle = 0
         self.is_playing = False
         self.cover_pixmap = None
-        self.default_pixmap = self.generate_default_cover()
+        self.default_pixmap = MinimalArtGenerator.draw_vinyl_placeholder(320)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.rotate)
         self.timer.start(20) 
 
-    def set_cover(self, pixmap):
-        self.cover_pixmap = pixmap
-        self.update()
+    def set_cover(self, pixmap): self.cover_pixmap = pixmap; self.update()
     def play(self): self.is_playing = True
     def pause(self): self.is_playing = False
     def rotate(self):
         if self.is_playing: self.angle = (self.angle + 0.5) % 360; self.update()
 
-    def generate_default_cover(self):
-        pix = QPixmap(300, 300); pix.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pix); p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QBrush(QColor(20, 20, 20))); p.drawEllipse(0, 0, 300, 300); p.end()
-        return pix
-
     def paintEvent(self, event):
-        painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height(); center = QPoint(w//2, h//2)
-        painter.translate(center); painter.rotate(self.angle); painter.translate(-center)
-        radius = int(min(w, h) // 2 - 10)
+        p.translate(center); p.rotate(self.angle); p.translate(-center)
+        r = int(min(w, h) // 2 - 10)
         
-        painter.setBrush(QBrush(QColor(15, 15, 15))); painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(center, radius, radius)
-        
-        pen = QPen(QColor(40, 40, 40)); pen.setWidth(1); painter.setPen(pen); painter.setBrush(Qt.BrushStyle.NoBrush)
-        for r in range(radius - 10, radius - 80, -3): painter.drawEllipse(center, r, r)
+        p.setBrush(QBrush(QColor(15, 15, 15))); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(center, r, r)
+        pen = QPen(QColor(40, 40, 40)); pen.setWidth(1); p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        for i in range(r - 10, r - 80, -3): p.drawEllipse(center, i, i)
             
-        inner_radius = int(radius - 55)
-        if inner_radius > 0:
-            path = QPainterPath(); path.addEllipse(QPointF(w/2, h/2), inner_radius, inner_radius)
-            painter.setClipPath(path)
+        ir = int(r - 55)
+        if ir > 0:
+            path = QPainterPath(); path.addEllipse(QPointF(w/2, h/2), ir, ir); p.setClipPath(path)
             img = self.cover_pixmap if self.cover_pixmap else self.default_pixmap
             if img:
-                d = int(inner_radius * 2)
-                scaled = img.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-                painter.drawPixmap(int(w//2 - scaled.width()//2), int(h//2 - scaled.height()//2), scaled)
-            painter.setClipping(False)
+                d = int(ir * 2); sc = img.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                p.drawPixmap(int(w//2 - sc.width()//2), int(h//2 - sc.height()//2), sc)
+            p.setClipping(False)
         
-        painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawEllipse(center, 5, 5)
-        painter.resetTransform(); painter.translate(center)
-        grad = QLinearGradient(-radius, -radius, radius, radius)
-        grad.setColorAt(0, QColor(255, 255, 255, 20)); grad.setColorAt(0.5, QColor(255, 255, 255, 0)); grad.setColorAt(1, QColor(255, 255, 255, 10))
-        painter.setBrush(QBrush(grad)); painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(QPoint(0,0), radius, radius)
+        p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
+        p.resetTransform(); p.translate(center)
+        grad = QLinearGradient(-r, -r, r, r)
+        grad.setColorAt(0, QColor(255, 255, 255, 20)); grad.setColorAt(1, QColor(255, 255, 255, 5))
+        p.setBrush(QBrush(grad)); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(QPoint(0,0), r, r)
 
-# --- 3. 呼吸按钮 ---
+# --- 4. 呼吸按钮 ---
 class BreathingButton(QPushButton):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
@@ -154,7 +172,7 @@ QMainWindow {{ background-color: #121212; }}
 QWidget {{ font-family: "Microsoft YaHei UI", sans-serif; background: transparent; }}
 QListWidget {{ 
     background-color: rgba(20, 20, 20, 0.6); border-radius: 10px;
-    color: #AAA; font-size: 13px; padding: 5px; border: 1px solid #333;
+    color: #AAA; font-size: 13px; padding: 5px; border: 1px solid #333; outline: none;
 }}
 QListWidget::item {{ height: 40px; border-radius: 5px; padding-left: 10px; margin-bottom: 2px; }}
 QListWidget::item:selected {{ background-color: rgba(0, 255, 213, 0.1); color: {ACCENT_HEX}; border: 1px solid {ACCENT_HEX}; }}
@@ -181,28 +199,25 @@ QSlider::handle:horizontal {{
 }}
 QTextEdit {{
     background-color: rgba(0,0,0,0.3); border: 1px solid #333; color: #DDD; padding: 15px; 
-    font-size: 16px; border-radius: 10px;
+    font-size: 18px; border-radius: 10px; line-height: 200%;
 }}
-/* 顶部标题栏按钮 */
-QPushButton#WinBtn {{
-    background-color: transparent; border: none; font-size: 16px; color: #888; border-radius: 0px;
-}}
-QPushButton#WinBtn:hover {{ color: white; background-color: #333; }}
-QPushButton#CloseBtn {{
-    background-color: transparent; border: none; font-size: 16px; color: #888; border-radius: 0px;
-}}
-QPushButton#CloseBtn:hover {{ color: white; background-color: #E81123; }}
+/* 窗口控制按钮 */
+QPushButton#WinBtn {{ background: transparent; border: none; font-size: 14px; color: #888; }}
+QPushButton#WinBtn:hover {{ color: white; background: #333; }}
+QPushButton#CloseBtn {{ background: transparent; border: none; font-size: 14px; color: #888; }}
+QPushButton#CloseBtn:hover {{ color: white; background: #E81123; }}
 """
 
 class ModernPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MusePlayer Elite")
+        self.setWindowTitle("MusePlayer")
         self.resize(1150, 780)
-        # 【关键】移除系统边框
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowSystemMenuHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False) # 保持不透明防止穿透
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         
+        # 设置全新图标
+        self.setWindowIcon(MinimalArtGenerator.draw_icon())
         self.setStyleSheet(STYLESHEET)
         
         self.bg_effect = DynamicBackground(self)
@@ -225,126 +240,86 @@ class ModernPlayer(QMainWindow):
         self.player.positionChanged.connect(self.update_ui_progress)
         self.player.mediaStatusChanged.connect(self.handle_media_status)
 
-        # 窗口拖动变量
         self.old_pos = None
-
         self.init_ui()
 
     def resizeEvent(self, event):
         self.bg_effect.setGeometry(0, 0, self.width(), self.height())
         super().resizeEvent(event)
 
-    # --- 窗口拖动逻辑 ---
+    # 窗口拖动
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.old_pos = event.globalPosition().toPoint()
-
+        if event.button() == Qt.MouseButton.LeftButton: self.old_pos = event.globalPosition().toPoint()
     def mouseMoveEvent(self, event):
         if self.old_pos:
             delta = event.globalPosition().toPoint() - self.old_pos
             self.move(self.pos() + delta)
             self.old_pos = event.globalPosition().toPoint()
-
-    def mouseReleaseEvent(self, event):
-        self.old_pos = None
+    def mouseReleaseEvent(self, event): self.old_pos = None
 
     def init_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        root = QVBoxLayout(main_widget)
-        root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        main_widget = QWidget(); self.setCentralWidget(main_widget)
+        root = QVBoxLayout(main_widget); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
 
-        # --- 1. 自定义标题栏 ---
-        title_bar = QWidget()
-        title_bar.setFixedHeight(35)
-        title_bar.setStyleSheet("background-color: #181818;")
-        tb_layout = QHBoxLayout(title_bar)
-        tb_layout.setContentsMargins(15, 0, 0, 0)
+        # Title Bar
+        title_bar = QWidget(); title_bar.setFixedHeight(35); title_bar.setStyleSheet("background-color: #181818;")
+        tb = QHBoxLayout(title_bar); tb.setContentsMargins(15, 0, 0, 0)
         
-        # 标题图标/文字
-        lbl_title = QLabel("MUSE PLAYER ELITE")
-        lbl_title.setStyleSheet(f"color: {ACCENT_HEX}; font-weight: bold; letter-spacing: 2px;")
+        # 状态栏图标
+        lbl_icon = QLabel(); lbl_icon.setPixmap(MinimalArtGenerator.draw_icon(20).pixmap(20,20))
+        lbl_title = QLabel(" MUSE PLAYER"); lbl_title.setStyleSheet(f"color: #888; font-weight: bold; font-size: 12px;")
         
-        # 最小化/关闭按钮
-        btn_min = QPushButton("—")
-        btn_min.setObjectName("WinBtn")
-        btn_min.setFixedSize(45, 35)
-        btn_min.clicked.connect(self.showMinimized)
+        btn_min = QPushButton("—"); btn_min.setObjectName("WinBtn"); btn_min.setFixedSize(45, 35); btn_min.clicked.connect(self.showMinimized)
+        btn_close = QPushButton("✕"); btn_close.setObjectName("CloseBtn"); btn_close.setFixedSize(45, 35); btn_close.clicked.connect(self.close)
         
-        btn_close = QPushButton("✕")
-        btn_close.setObjectName("CloseBtn")
-        btn_close.setFixedSize(45, 35)
-        btn_close.clicked.connect(self.close)
-        
-        tb_layout.addWidget(lbl_title)
-        tb_layout.addStretch()
-        tb_layout.addWidget(btn_min)
-        tb_layout.addWidget(btn_close)
-        
+        tb.addWidget(lbl_icon); tb.addWidget(lbl_title); tb.addStretch(); tb.addWidget(btn_min); tb.addWidget(btn_close)
         root.addWidget(title_bar)
 
-        # --- 2. 主内容区 ---
-        content = QHBoxLayout()
-        content.setContentsMargins(20, 20, 20, 0)
+        # Content
+        content = QHBoxLayout(); content.setContentsMargins(20, 20, 20, 0)
         
-        sidebar = QWidget()
-        sidebar.setFixedWidth(280)
-        sidebar.setStyleSheet("background-color: rgba(30,30,30,0.4); border-radius: 15px;")
-        sv = QVBoxLayout(sidebar)
-        sv.setContentsMargins(15, 20, 15, 20)
-        
+        sidebar = QWidget(); sidebar.setFixedWidth(280); sidebar.setStyleSheet("background-color: rgba(30,30,30,0.4); border-radius: 15px;")
+        sv = QVBoxLayout(sidebar); sv.setContentsMargins(15, 20, 15, 20)
         sv.addWidget(QLabel("🎵 播放列表", styleSheet=f"color:{ACCENT_HEX}; font-size:18px; font-weight:bold;"))
-        
         btn_folder = QPushButton("📂 导入文件夹"); btn_folder.clicked.connect(self.select_folder)
         btn_files = QPushButton("➕ 添加文件"); btn_files.clicked.connect(self.select_files)
         sv.addWidget(btn_folder); sv.addWidget(btn_files)
-        
-        self.track_list = QListWidget()
-        self.track_list.doubleClicked.connect(self.play_selected)
+        self.track_list = QListWidget(); self.track_list.doubleClicked.connect(self.play_selected)
         sv.addWidget(self.track_list)
-        
-        self.btn_switch_mode = QPushButton("🛠️ 进入歌词工坊")
-        self.btn_switch_mode.clicked.connect(self.toggle_view)
+        self.btn_switch_mode = QPushButton("🛠️ 进入歌词工坊"); self.btn_switch_mode.clicked.connect(self.toggle_view)
         sv.addWidget(self.btn_switch_mode)
 
         self.stack = QStackedWidget()
         
-        # Page Play
-        page_play = QWidget()
-        ph = QHBoxLayout(page_play); ph.setSpacing(40)
-        
+        # Play Page
+        page_play = QWidget(); ph = QHBoxLayout(page_play); ph.setSpacing(40)
         self.vinyl = VinylRecord()
-        vinyl_container = QVBoxLayout()
-        vinyl_container.addStretch(); vinyl_container.addWidget(self.vinyl, 0, Qt.AlignmentFlag.AlignCenter); vinyl_container.addStretch()
+        vinyl_container = QVBoxLayout(); vinyl_container.addStretch(); vinyl_container.addWidget(self.vinyl, 0, Qt.AlignmentFlag.AlignCenter); vinyl_container.addStretch()
         
         lrc_container = QVBoxLayout()
-        self.lbl_lrc_pre = QLabel("")
-        self.lbl_lrc_cur = QLabel("MUSE PLAYER")
-        self.lbl_lrc_next = QLabel("")
+        self.lbl_lrc_pre = QLabel(""); self.lbl_lrc_cur = QLabel("MUSE PLAYER"); self.lbl_lrc_next = QLabel("")
         self.lbl_lrc_pre.setStyleSheet("color:#666; font-size:16px;")
         self.lbl_lrc_cur.setStyleSheet(f"color:{ACCENT_HEX}; font-size:32px; font-weight:900;")
         glow = QGraphicsDropShadowEffect(self.lbl_lrc_cur); glow.setBlurRadius(20); glow.setColor(ACCENT_COLOR); glow.setOffset(0, 0)
         self.lbl_lrc_cur.setGraphicsEffect(glow)
         self.lbl_lrc_next.setStyleSheet("color:#666; font-size:16px;")
         for l in [self.lbl_lrc_pre, self.lbl_lrc_cur, self.lbl_lrc_next]: l.setAlignment(Qt.AlignmentFlag.AlignCenter); l.setWordWrap(True)
-        lrc_container.addStretch()
-        lrc_container.addWidget(self.lbl_lrc_pre); lrc_container.addSpacing(25)
-        lrc_container.addWidget(self.lbl_lrc_cur); lrc_container.addSpacing(25)
-        lrc_container.addWidget(self.lbl_lrc_next); lrc_container.addStretch()
+        lrc_container.addStretch(); lrc_container.addWidget(self.lbl_lrc_pre); lrc_container.addSpacing(25); lrc_container.addWidget(self.lbl_lrc_cur); lrc_container.addSpacing(25); lrc_container.addWidget(self.lbl_lrc_next); lrc_container.addStretch()
         ph.addLayout(vinyl_container, 4); ph.addLayout(lrc_container, 6)
 
-        # Page Maker
-        page_maker = QWidget()
-        mv = QVBoxLayout(page_maker); mv.setContentsMargins(50, 20, 50, 20)
-        mv.addWidget(QLabel("🎹 智能歌词制作模式", styleSheet="font-size:24px; font-weight:bold; color:white;"))
+        # Maker Page
+        page_maker = QWidget(); mv = QVBoxLayout(page_maker); mv.setContentsMargins(50, 20, 50, 20)
+        mv.addWidget(QLabel("🎹 智能歌词制作", styleSheet="font-size:24px; font-weight:bold; color:white;"))
+        
         self.txt_maker = QTextEdit()
-        self.txt_maker.setPlaceholderText("粘贴歌词...")
+        self.txt_maker.setPlaceholderText("1. 粘贴文本\n2. 点击开始录制\n3. 听到歌词按空格\n4. 失误了？按 Backspace 回退 3 秒重试！")
         self.txt_maker.setAcceptRichText(True)
-        self.lbl_maker_hint = QLabel("准备就绪")
-        self.lbl_maker_hint.setStyleSheet(f"color:{ACCENT_HEX}; font-size:18px;")
+        
+        self.lbl_maker_hint = QLabel("准备就绪"); self.lbl_maker_hint.setStyleSheet(f"color:{ACCENT_HEX}; font-size:18px;")
+        
         mh = QHBoxLayout()
-        self.btn_rec = BreathingButton("🎙️ 开始录制"); self.btn_rec.setObjectName("BreathingBtn"); self.btn_rec.setFixedSize(180, 50); self.btn_rec.setCheckable(True); self.btn_rec.clicked.connect(self.toggle_record)
-        btn_save = QPushButton("💾 保存歌词"); btn_save.setFixedSize(120, 50); btn_save.clicked.connect(self.save_lrc)
+        self.btn_rec = BreathingButton("🎙️ 开始录制 (空格打点)"); self.btn_rec.setObjectName("BreathingBtn"); self.btn_rec.setFixedSize(220, 50); self.btn_rec.setCheckable(True); self.btn_rec.clicked.connect(self.toggle_record)
+        btn_save = QPushButton("💾 手动保存"); btn_save.setFixedSize(120, 50); btn_save.clicked.connect(self.save_lrc)
         mh.addWidget(self.btn_rec); mh.addWidget(btn_save); mh.addStretch()
         mv.addWidget(self.txt_maker); mv.addWidget(self.lbl_maker_hint); mv.addLayout(mh)
 
@@ -354,6 +329,7 @@ class ModernPlayer(QMainWindow):
         # Bottom Bar
         bottom_bar = QFrame(); bottom_bar.setObjectName("BottomBar"); bottom_bar.setFixedHeight(100)
         bh = QHBoxLayout(bottom_bar); bh.setContentsMargins(30, 10, 30, 10)
+        
         self.btn_mode = QPushButton(); self.btn_mode.setFixedSize(110, 40)
         self.btn_mode.setStyleSheet(f"QPushButton {{ background-color: #333; border: 1px solid #555; border-radius: 20px; color: #DDD; font-size: 13px; }} QPushButton:hover {{ background-color: #444; border-color: {ACCENT_HEX}; color: white; }}")
         self.btn_mode.clicked.connect(self.toggle_play_mode); self.update_mode_btn() 
@@ -371,16 +347,14 @@ class ModernPlayer(QMainWindow):
         
         bh.addWidget(self.btn_mode); bh.addStretch(); bh.addLayout(ctrl); bh.addStretch(); bh.addLayout(prog); bh.setStretch(4, 1)
         
-        root.addWidget(title_bar) # 添加自定义标题栏
-        root.addLayout(content)
-        root.addWidget(bottom_bar)
+        root.addWidget(title_bar); root.addLayout(content); root.addWidget(bottom_bar)
 
     # --- Logic ---
-    def toggle_play_mode(self):
-        self.play_mode = (self.play_mode + 1) % 3; self.update_mode_btn()
+    def toggle_play_mode(self): self.play_mode = (self.play_mode + 1) % 3; self.update_mode_btn()
     def update_mode_btn(self):
         modes = [("🔁 列表循环", "按顺序"), ("🔂 单曲循环", "重复当前"), ("🔀 随机播放", "随机选择")]
         t, tip = modes[self.play_mode]; self.btn_mode.setText(t); self.btn_mode.setToolTip(tip)
+
     def select_folder(self):
         d = QFileDialog.getExistingDirectory(self, "目录")
         if d:
@@ -388,15 +362,18 @@ class ModernPlayer(QMainWindow):
             for f in os.listdir(d):
                 if f.lower().endswith(SUPPORTED_FORMATS): self.playlist.append(os.path.join(d,f)); self.track_list.addItem(os.path.splitext(f)[0])
             if self.playlist: self.current_index=0; self.play_music(self.playlist[0])
+
     def select_files(self):
         fs,_ = QFileDialog.getOpenFileNames(self, "文件", "", "Audio (*.mp3 *.flac *.wav)")
         if fs:
             self.playlist.extend(fs)
             for f in fs: self.track_list.addItem(os.path.splitext(os.path.basename(f))[0])
             if self.current_index==-1: self.current_index=0; self.play_music(self.playlist[0])
+
     def play_selected(self):
         idx = self.track_list.currentRow()
         if idx!=-1: self.current_index=idx; self.play_music(self.playlist[idx])
+
     def play_music(self, path):
         self.player.setSource(QUrl.fromLocalFile(path)); self.player.play()
         self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
@@ -407,22 +384,31 @@ class ModernPlayer(QMainWindow):
         if not found: self.vinyl.set_cover(None)
         self.load_lrc_view(path)
         if self.is_maker_active: self.toggle_record()
+
     def toggle_play(self):
         if self.player.playbackState()==QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause(); self.btn_play.setText("▶"); self.btn_play.stop_breathing(); self.vinyl.pause()
         else: self.player.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
+
     def load_lrc_view(self, path):
         p = os.path.splitext(path)[0]+".lrc"; self.lyrics_map={}; self.lyrics_times=[]
         self.lbl_lrc_cur.setText("暂无歌词"); self.lbl_lrc_pre.clear(); self.lbl_lrc_next.clear()
         if os.path.exists(p):
             try:
-                with open(p,'r',encoding='utf-8',errors='ignore') as f:
+                # 修复：使用 utf-8-sig 处理 BOM 头，防止乱码
+                with open(p,'r',encoding='utf-8-sig',errors='ignore') as f:
                     for l in f:
+                        # 容错：移除首尾空白，防止解析失败
+                        l = l.strip()
                         if "]" in l:
-                            t,x = l.split("]",1); m,s = t.strip("[").split(":"); ms = int(int(m)*60000+float(s)*1000)
-                            self.lyrics_map[ms]=x.strip(); self.lyrics_times.append(ms)
+                            t,x = l.split("]",1); t = t.strip("[")
+                            if ":" in t:
+                                m,s = t.split(":")
+                                ms = int(int(m)*60000 + float(s)*1000)
+                                self.lyrics_map[ms]=x.strip(); self.lyrics_times.append(ms)
                 self.lyrics_times.sort(); self.lbl_lrc_cur.setText("歌词已加载")
             except: pass
+
     def update_ui_progress(self, pos):
         self.slider.setValue(pos); self.slider.setMaximum(self.player.duration())
         m,s = divmod(pos//1000,60); dm,ds = divmod(self.player.duration()//1000,60)
@@ -434,50 +420,113 @@ class ModernPlayer(QMainWindow):
                 self.lbl_lrc_cur.setText(self.lyrics_map[cur])
                 self.lbl_lrc_pre.setText(self.lyrics_map[self.lyrics_times[idx-1]] if idx>0 else "")
                 self.lbl_lrc_next.setText(self.lyrics_map[self.lyrics_times[idx+1]] if idx<len(self.lyrics_times)-1 else "")
+
     def toggle_view(self):
         if self.stack.currentIndex()==0: self.stack.setCurrentIndex(1); self.btn_switch_mode.setText("🎵 返回播放")
         else: self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入制作")
+
+    # --- 智能识别升级 ---
     def is_skippable(self, line):
         line = line.strip()
-        if not line or (line.startswith("[") and line.endswith("]")) or (line.startswith("《") and line.endswith("》")) or re.match(r'^[-—]+$', line) or line.startswith("作词") or line.startswith("作曲"): return True
+        # 增加对 ⸻ 和长横线的识别
+        if not line: return True
+        if (line.startswith("[") and line.endswith("]")): return True
+        if (line.startswith("《") and line.endswith("》")): return True
+        # 强力正则：匹配各种横线
+        if re.match(r'^\s*[-—_—=⸻]+\s*$', line): return True
+        if line.startswith("作词") or line.startswith("作曲") or line.startswith("编曲"): return True
         return False
+
     def toggle_record(self):
         if self.btn_rec.isChecked():
             raw = self.txt_maker.toPlainText().strip()
-            if not raw: self.btn_rec.setChecked(False); QMessageBox.warning(self,"提示","请粘贴歌词"); return
+            if not raw: self.btn_rec.setChecked(False); QMessageBox.warning(self,"提示","请先粘贴歌词"); return
             self.maker_raw_lines = raw.split('\n'); self.playable_indices = []
             for i, l in enumerate(self.maker_raw_lines):
                 if not self.is_skippable(l): self.playable_indices.append(i)
-            if not self.playable_indices: self.btn_rec.setChecked(False); return
+            if not self.playable_indices: self.btn_rec.setChecked(False); QMessageBox.warning(self,"错误","未识别到有效歌词"); return
+            
             self.maker_timestamps = []; self.maker_step = 0; self.is_maker_active = True; self.txt_maker.setReadOnly(True)
-            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState: self.player.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
-            self.btn_rec.setText("⏹ 停止录制"); self.btn_rec.start_breathing(); self.render_maker_html(); self.setFocus()
+            
+            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self.player.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
+            
+            self.btn_rec.setText("⏹ 停止 / Backspace 回退"); self.btn_rec.start_breathing(); self.render_maker_html(); self.setFocus()
         else:
             self.is_maker_active = False; self.txt_maker.setReadOnly(False); self.btn_rec.setText("🎙️ 开始录制"); self.btn_rec.stop_breathing()
             self.lbl_maker_hint.setText("录制结束"); self.txt_maker.setPlainText("\n".join(self.maker_raw_lines))
+
     def render_maker_html(self):
-        html = "<body style='font-family:Microsoft YaHei; font-size:16px; line-height:160%; color:#888;'>"
+        html = "<body style='font-family:Microsoft YaHei; font-size:18px; line-height:200%; color:#888;'>"
         t_idx = -1
         if self.maker_step < len(self.playable_indices): t_idx = self.playable_indices[self.maker_step]
+        
         for i, l in enumerate(self.maker_raw_lines):
             c = l.strip() if l.strip() else "&nbsp;"; style = ""; prefix = ""
             if self.is_skippable(l): style = "color:#555; font-style:italic; font-size:14px;"
             elif i in self.playable_indices:
                 p = self.playable_indices.index(i)
                 if p < self.maker_step: style = "color:#00AA88; text-decoration:line-through;"; prefix="✅ "
-                elif p == self.maker_step: style = f"color:{ACCENT_HEX}; font-size:22px; font-weight:bold; background-color:rgba(0,255,213,0.15);"; prefix="👉 "
+                elif p == self.maker_step: style = f"color:{ACCENT_HEX}; font-size:24px; font-weight:bold; background-color:rgba(0,255,213,0.15);"; prefix="👉 "
                 else: style = "color:#DDD;"
             html += f"<div style='{style}'>{prefix}{c}</div>"
         html += "</body>"; self.txt_maker.setHtml(html)
+        
+        # --- 智能居中滚动 ---
         if t_idx != -1:
-            cursor = self.txt_maker.textCursor(); cursor.movePosition(QTextCursor.MoveOperation.Start); cursor.movePosition(QTextCursor.MoveOperation.NextBlock, n=t_idx)
-            self.txt_maker.setTextCursor(cursor); self.txt_maker.ensureCursorVisible(); self.lbl_maker_hint.setText(f"录制中: {self.maker_raw_lines[t_idx]}")
-        elif self.maker_step >= len(self.playable_indices): self.lbl_maker_hint.setText("录制完成！")
+            cursor = self.txt_maker.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            cursor.movePosition(QTextCursor.MoveOperation.NextBlock, n=t_idx)
+            self.txt_maker.setTextCursor(cursor)
+            
+            # 计算居中位置
+            scrollbar = self.txt_maker.verticalScrollBar()
+            current_val = scrollbar.value()
+            
+            # 获取当前行的矩形位置
+            rect = self.txt_maker.cursorRect(cursor)
+            # 计算视口中心偏移
+            target_y = rect.top() + current_val - (self.txt_maker.viewport().height() / 2) + (rect.height() / 2)
+            scrollbar.setValue(int(target_y))
+            
+            self.lbl_maker_hint.setText(f"正在录制: {self.maker_raw_lines[t_idx]}")
+        elif self.maker_step >= len(self.playable_indices):
+            self.lbl_maker_hint.setText("录制完成！等待歌曲结束...")
+
     def keyPressEvent(self, event):
-        if self.is_maker_active and event.key() == Qt.Key.Key_Space:
-            if self.maker_step < len(self.playable_indices): self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
-            else: self.toggle_record()
+        if self.is_maker_active:
+            # 空格：打点
+            if event.key() == Qt.Key.Key_Space:
+                if self.maker_step < len(self.playable_indices):
+                    self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
+            # 退格：后悔药
+            elif event.key() == Qt.Key.Key_Backspace:
+                if self.maker_step > 0:
+                    self.maker_step -= 1
+                    self.maker_timestamps.pop()
+                    # 倒带 3 秒
+                    new_pos = max(0, self.player.position() - 3000)
+                    self.player.setPosition(new_pos)
+                    self.render_maker_html()
+                    self.lbl_maker_hint.setText(f"⏪ 已回退! 重试上一句...")
         else: super().keyPressEvent(event)
+
+    def handle_media_status(self, s):
+        # 自动结束流程
+        if s == QMediaPlayer.MediaStatus.EndOfMedia:
+            if self.is_maker_active:
+                self.finish_recording_flow()
+            else:
+                self.next_song()
+
+    def finish_recording_flow(self):
+        # 停止录制状态
+        self.toggle_record() 
+        reply = QMessageBox.question(self, "录制完成", "歌曲播放结束。\n保存歌词吗？\n(点击 No 将放弃本次录制)",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.save_lrc()
+
     def save_lrc(self):
         if not self.playlist: return
         p = os.path.splitext(self.playlist[self.current_index])[0]+".lrc"
@@ -487,8 +536,7 @@ class ModernPlayer(QMainWindow):
                     f.write(f"[{self.maker_timestamps[i]//60000:02}:{(self.maker_timestamps[i]%60000)/1000:05.2f}]{self.maker_raw_lines[self.playable_indices[i]]}\n")
             QMessageBox.information(self,"成功",f"已保存: {p}"); self.load_lrc_view(self.playlist[self.current_index])
         except Exception as e: QMessageBox.warning(self,"错误",str(e))
-    def handle_media_status(self, s):
-        if s==QMediaPlayer.MediaStatus.EndOfMedia: self.next_song()
+
     def next_song(self): self.skip(1)
     def prev_song(self): self.skip(-1)
     def skip(self,d):
