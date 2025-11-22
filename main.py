@@ -119,7 +119,11 @@ class VinylRecord(QWidget):
                 d = int(ir * 2); sc = img.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
                 p.drawPixmap(int(w//2 - sc.width()//2), int(h//2 - sc.height()//2), sc)
             p.setClipping(False)
-        p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
+        
+        # --- 已移除中心黑点 ---
+        # p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
+        # --------------------
+
         p.resetTransform(); p.translate(center)
         grad = QLinearGradient(-r, -r, r, r)
         grad.setColorAt(0, QColor(255, 255, 255, 20)); grad.setColorAt(1, QColor(255, 255, 255, 5))
@@ -447,15 +451,12 @@ class ModernPlayer(QMainWindow):
         if s == QMediaPlayer.MediaStatus.EndOfMedia:
             if self.is_maker_active: 
                 self.finish_recording_flow()
-            # --- 修复点：单曲循环逻辑 ---
             elif self.play_mode == 1: # 1 = 单曲循环
                 self.player.setPosition(0)
                 self.player.play()
-                # 确保视觉效果保持播放状态
                 self.vinyl.play()
                 self.btn_play.setText("⏸")
                 self.btn_play.start_breathing()
-            # --------------------------
             else: 
                 self.next_song()
 
