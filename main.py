@@ -4,13 +4,11 @@ import traceback
 import os
 
 def exception_hook(exctype, value, tb):
-    # 如果崩溃，将错误信息写入文件
     error_msg = "".join(traceback.format_exception(exctype, value, tb))
     with open("crash_log.txt", "w", encoding='utf-8') as f:
         f.write(error_msg)
     print(error_msg)
-    # 阻塞程序，防止窗口立刻消失
-    input("程序崩溃！请查看上方报错信息，或查看 crash_log.txt。按回车键退出...")
+    input("程序崩溃！请查看上方报错信息。按回车键退出...")
     sys.exit(1)
 
 sys.excepthook = exception_hook
@@ -33,7 +31,7 @@ SUPPORTED_FORMATS = (
     '.mp3', '.flac', '.wav', '.ogg', '.m4a', '.wma', 
     '.aac', '.ape', '.opus', '.alac', '.aiff', '.mp2'
 )
-ACCENT_COLOR = QColor(0, 255, 213) # 赛博朋克青
+ACCENT_COLOR = QColor(0, 255, 213)
 ACCENT_HEX = "#00FFD5"
 
 # --- 1. 动态背景 ---
@@ -66,18 +64,27 @@ class DynamicBackground(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
+        
+        # 背景
         grad = QLinearGradient(0, 0, w, h)
         grad.setColorAt(0, QColor(10, 10, 15))
         grad.setColorAt(0.5, QColor(15, 15, 20))
         grad.setColorAt(1, QColor(5, 5, 10))
         painter.fillRect(0, 0, w, h, grad)
+        
+        # 粒子
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
-            c = QColor(ACCENT_COLOR); c.setAlpha(p['alpha'])
+            c = QColor(ACCENT_COLOR)
+            c.setAlpha(int(p['alpha'])) # 强制 int
             painter.setBrush(QBrush(c))
-            painter.drawEllipse(QPoint(int(p['x']*w), int(p['y']*h)), p['size'], p['size'])
+            # 关键修复：所有坐标强制转换为 int
+            px = int(p['x'] * w)
+            py = int(p['y'] * h)
+            s = int(p['size'])
+            painter.drawEllipse(QPoint(px, py), s, s)
 
-# --- 2. 旋转黑胶唱片组件 ---
+# --- 2. 旋转黑胶唱片 ---
 class VinylRecord(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,35 +124,59 @@ class VinylRecord(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         center = QPoint(w//2, h//2)
-        painter.translate(center); painter.rotate(self.angle); painter.translate(-center)
         
-        radius = min(w, h) // 2 - 10
+        painter.translate(center)
+        painter.rotate(self.angle)
+        painter.translate(-center)
+        
+        # 关键修复：确保 radius 是 int
+        radius = int(min(w, h) // 2 - 10)
+        
+        # 1. 黑底
         painter.setBrush(QBrush(QColor(15, 15, 15)))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(center, radius, radius)
         
+        # 2. 纹理
         pen = QPen(QColor(40, 40, 40)); pen.setWidth(1)
         painter.setPen(pen); painter.setBrush(Qt.BrushStyle.NoBrush)
-        for r in range(radius - 10, radius - 80, -3): painter.drawEllipse(center, r, r)
+        for r in range(radius - 10, radius - 80, -3): 
+            painter.drawEllipse(center, r, r)
             
-        inner_radius = radius - 55
-        path = QPainterPath(); path.addEllipse(QPoint(w//2, h//2), inner_radius, inner_radius)
-        painter.setClipPath(path)
-        
-        img_to_draw = self.cover_pixmap if self.cover_pixmap else self.default_pixmap
-        if img_to_draw:
-            scaled = img_to_draw.scaled(inner_radius*2, inner_radius*2, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-            painter.drawPixmap(w//2 - scaled.width()//2, h//2 - scaled.height()//2, scaled)
+        # 3. 封面
+        inner_radius = int(radius - 55)
+        if inner_radius > 0:
+            path = QPainterPath()
+            # 使用 QPointF 避免潜在转换问题
+            path.addEllipse(QPoint(w//2, h//2), inner_radius, inner_radius)
+            painter.setClipPath(path)
             
-        painter.setClipping(False)
-        painter.setBrush(QBrush(QColor(0, 0, 0))); painter.drawEllipse(center, 5, 5)
+            img_to_draw = self.cover_pixmap if self.cover_pixmap else self.default_pixmap
+            if img_to_draw:
+                # 关键修复：scaled 参数强制 int
+                d = int(inner_radius * 2)
+                scaled = img_to_draw.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                # drawPixmap 参数强制 int
+                dx = int(w//2 - scaled.width()//2)
+                dy = int(h//2 - scaled.height()//2)
+                painter.drawPixmap(dx, dy, scaled)
+                
+            painter.setClipping(False)
         
-        painter.resetTransform(); painter.translate(center)
+        # 4. 中心孔
+        painter.setBrush(QBrush(QColor(0, 0, 0)))
+        painter.drawEllipse(center, 5, 5)
+        
+        # 5. 高光
+        painter.resetTransform()
+        painter.translate(center)
         grad = QLinearGradient(-radius, -radius, radius, radius)
         grad.setColorAt(0, QColor(255, 255, 255, 20))
         grad.setColorAt(0.5, QColor(255, 255, 255, 0))
         grad.setColorAt(1, QColor(255, 255, 255, 10))
-        painter.setBrush(QBrush(grad)); painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(grad))
+        painter.setPen(Qt.PenStyle.NoPen)
+        # 使用 QPoint(0,0) 确保是 int 坐标
         painter.drawEllipse(QPoint(0,0), radius, radius)
 
 # --- 3. 呼吸灯按钮 ---
@@ -154,21 +185,32 @@ class BreathingButton(QPushButton):
         super().__init__(text, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(0); self.shadow.setColor(ACCENT_COLOR); self.shadow.setOffset(0, 0)
+        self.shadow.setBlurRadius(0)
+        self.shadow.setColor(ACCENT_COLOR)
+        self.shadow.setOffset(0, 0)
         self.setGraphicsEffect(self.shadow)
+        
         self.anim = QPropertyAnimation(self, b"glowRadius")
-        self.anim.setDuration(1500); self.anim.setStartValue(0); self.anim.setEndValue(30)
-        self.anim.setEasingCurve(QEasingCurve.Type.InOutSine); self.anim.setLoopCount(-1)
+        self.anim.setDuration(1500)
+        self.anim.setStartValue(0)
+        self.anim.setEndValue(30)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self.anim.setLoopCount(-1)
 
     @pyqtProperty(int)
-    def glowRadius(self): return self.shadow.blurRadius()
+    def glowRadius(self): 
+        return int(self.shadow.blurRadius())
+
     @glowRadius.setter
-    def glowRadius(self, radius): self.shadow.setBlurRadius(radius)
+    def glowRadius(self, radius):
+        # 关键修复：强制转换 int，防止动画插值产生 float
+        self.shadow.setBlurRadius(int(radius))
 
     def start_breathing(self): self.anim.start()
     def stop_breathing(self): self.anim.stop(); self.shadow.setBlurRadius(0)
 
 # --- 主样式表 ---
+# 移除了非法的 text-shadow
 STYLESHEET = f"""
 QMainWindow {{ background-color: #121212; }}
 QWidget {{ font-family: "Microsoft YaHei UI", sans-serif; background: transparent; }}
@@ -288,7 +330,16 @@ class ModernPlayer(QMainWindow):
         self.lbl_lrc_next = QLabel("")
         
         self.lbl_lrc_pre.setStyleSheet("color:#666; font-size:16px;")
-        self.lbl_lrc_cur.setStyleSheet(f"color:{ACCENT_HEX}; font-size:32px; font-weight:900; text-shadow: 0px 0px 10px {ACCENT_HEX};")
+        # 移除了 text-shadow，改用下面的 GraphicsEffect
+        self.lbl_lrc_cur.setStyleSheet(f"color:{ACCENT_HEX}; font-size:32px; font-weight:900;")
+        
+        # 为歌词添加合法的发光特效
+        glow = QGraphicsDropShadowEffect(self.lbl_lrc_cur)
+        glow.setBlurRadius(20)
+        glow.setColor(ACCENT_COLOR)
+        glow.setOffset(0, 0)
+        self.lbl_lrc_cur.setGraphicsEffect(glow)
+
         self.lbl_lrc_next.setStyleSheet("color:#666; font-size:16px;")
         
         for l in [self.lbl_lrc_pre, self.lbl_lrc_cur, self.lbl_lrc_next]:
