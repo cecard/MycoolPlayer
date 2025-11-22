@@ -4,7 +4,7 @@ import random
 import math
 import re
 import traceback
-import json  # 新增：用于保存配置
+import json
 
 # --- 崩溃记录 ---
 def exception_hook(exctype, value, tb):
@@ -30,7 +30,7 @@ SUPPORTED_FORMATS = (
 )
 ACCENT_COLOR = QColor(0, 255, 213)
 ACCENT_HEX = "#00FFD5"
-CONFIG_FILE = "settings.json" # 配置文件名
+CONFIG_FILE = "settings.json"
 
 # --- 1. 动态背景 ---
 class DynamicBackground(QWidget):
@@ -90,7 +90,7 @@ class MinimalArtGenerator:
         p.setBrush(QBrush(QColor(20, 20, 20))); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(0, 0, size, size); p.end()
         return pix
 
-# --- 3. 旋转黑胶 ---
+# --- 3. 旋转黑胶 (无黑点版) ---
 class VinylRecord(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -110,9 +110,15 @@ class VinylRecord(QWidget):
         w, h = self.width(), self.height(); center = QPoint(w//2, h//2)
         p.translate(center); p.rotate(self.angle); p.translate(-center)
         r = int(min(w, h) // 2 - 10)
+        
+        # 唱片底
         p.setBrush(QBrush(QColor(15, 15, 15))); p.setPen(Qt.PenStyle.NoPen); p.drawEllipse(center, r, r)
+        
+        # 纹理
         pen = QPen(QColor(40, 40, 40)); pen.setWidth(1); p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         for i in range(r - 10, r - 80, -3): p.drawEllipse(center, i, i)
+        
+        # 封面图
         ir = int(r - 55)
         if ir > 0:
             path = QPainterPath(); path.addEllipse(QPointF(w/2, h/2), ir, ir); p.setClipPath(path)
@@ -121,7 +127,11 @@ class VinylRecord(QWidget):
                 d = int(ir * 2); sc = img.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
                 p.drawPixmap(int(w//2 - sc.width()//2), int(h//2 - sc.height()//2), sc)
             p.setClipping(False)
-        p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
+        
+        # 【关键】这里原本有一行绘制黑点的代码，现已确认删除
+        # p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5) <--- 已删除
+        
+        # 高光反光
         p.resetTransform(); p.translate(center)
         grad = QLinearGradient(-r, -r, r, r)
         grad.setColorAt(0, QColor(255, 255, 255, 20)); grad.setColorAt(1, QColor(255, 255, 255, 5))
@@ -220,8 +230,6 @@ class ModernPlayer(QMainWindow):
 
         self.old_pos = None
         self.init_ui()
-        
-        # 启动时尝试加载上次的配置
         self.load_settings()
 
     def resizeEvent(self, event):
@@ -316,38 +324,29 @@ class ModernPlayer(QMainWindow):
         modes = [("🔁 列表循环", "按顺序"), ("🔂 单曲循环", "重复当前"), ("🔀 随机播放", "随机选择")]
         t, tip = modes[self.play_mode]; self.btn_mode.setText(t); self.btn_mode.setToolTip(tip)
 
-    # --- 核心修改：递归扫描文件夹 + 保存配置 ---
+    # --- 递归扫描文件夹 + 保存配置 ---
     def load_music_from_dir(self, folder_path):
-        """ 递归扫描文件夹内的所有音频文件 """
         self.playlist = []
         self.track_list.clear()
-        # os.walk 实现递归扫描
         for root, dirs, files in os.walk(folder_path):
             for f in files:
                 if f.lower().endswith(SUPPORTED_FORMATS):
                     full_path = os.path.join(root, f)
                     self.playlist.append(full_path)
-                    # 列表显示文件名
                     self.track_list.addItem(os.path.splitext(f)[0])
         
         if self.playlist:
             self.current_index = 0
             self.play_music(self.playlist[0])
-            # 暂停状态，等待用户操作
-            self.player.pause()
-            self.vinyl.pause()
-            self.btn_play.setText("▶")
-            self.btn_play.stop_breathing()
+            self.player.pause(); self.vinyl.pause(); self.btn_play.setText("▶"); self.btn_play.stop_breathing()
 
     def save_settings(self, folder_path):
-        """ 保存最后一次打开的文件夹路径 """
         try:
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump({'last_folder': folder_path}, f)
         except: pass
 
     def load_settings(self):
-        """ 启动时加载配置 """
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -358,10 +357,8 @@ class ModernPlayer(QMainWindow):
             except: pass
 
     def select_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "选择目录")
-        if d:
-            self.load_music_from_dir(d)
-            self.save_settings(d)
+        d = QFileDialog.getExistingDirectory(self, "目录")
+        if d: self.load_music_from_dir(d); self.save_settings(d)
 
     def select_files(self):
         fs,_ = QFileDialog.getOpenFileNames(self, "文件", "", "Audio (*.mp3 *.flac *.wav)")
