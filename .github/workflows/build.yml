@@ -1,4 +1,4 @@
-name: Build Folder Mode
+name: Build Final Release
 
 on:
   push:
@@ -22,15 +22,15 @@ jobs:
         python -m pip install --upgrade pip
         pip install PyQt6 pyinstaller
 
-    - name: Build Directory (Folder Mode)
+    - name: Build Final (No Black Box)
       run: |
-        # 使用 --onedir 生成文件夹，避免被杀毒软件拦截
-        # 保留 --console 以便查看报错
-        pyinstaller --noconfirm --onedir --console --clean --name "MusicPlayer" --hidden-import=PyQt6 main.py
+        # 关键修改：
+        # 1. 使用 --windowed (隐藏黑框)
+        # 2. 保持 --onedir (文件夹模式，最稳定)
+        pyinstaller --noconfirm --onedir --windowed --clean --name "MusicPlayer" --hidden-import=PyQt6 main.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MusicPlayer-Folder
-        # 上传生成的整个文件夹
+        name: MusicPlayer-Final
         path: dist/MusicPlayer
