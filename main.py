@@ -333,24 +333,12 @@ class ModernPlayer(QMainWindow):
     def play_music(self, path):
         self.player.setSource(QUrl.fromLocalFile(path)); self.player.play()
         self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
-        d = os.path.dirname(path)
-        
-        # 【关键修改】优先查找同名图片 (song.mp3 -> song.jpg)
+        d = os.path.dirname(path); found = False
         base_name = os.path.splitext(os.path.basename(path))[0]
-        img_candidates = [
-            base_name + ".jpg", base_name + ".png", base_name + ".jpeg", # 优先同名
-            "cover.jpg", "cover.png", "folder.jpg", "folder.png"       # 其次通用
-        ]
-        
-        found = False
-        for img_name in img_candidates:
-            p = os.path.join(d, img_name)
-            if os.path.exists(p):
-                self.vinyl.set_cover(QPixmap(p))
-                found = True
-                break
+        for n in [base_name+".jpg", base_name+".png", 'cover.jpg','cover.png','folder.jpg','folder.png']:
+            p = os.path.join(d,n)
+            if os.path.exists(p): self.vinyl.set_cover(QPixmap(p)); found=True; break
         if not found: self.vinyl.set_cover(None)
-        
         self.load_lrc_view(path)
         if self.is_maker_active: self.toggle_record()
 
@@ -397,8 +385,7 @@ class ModernPlayer(QMainWindow):
             self.stack.setCurrentIndex(1); self.btn_switch_mode.setText("🎵 返回播放")
             self.player.pause(); self.player.setPosition(0); self.vinyl.pause()
             self.btn_play.setText("▶"); self.btn_play.stop_breathing()
-        else: 
-            self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入制作")
+        else: self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入制作")
 
     def is_skippable(self, line):
         line = line.strip()
@@ -451,22 +438,31 @@ class ModernPlayer(QMainWindow):
     def keyPressEvent(self, event):
         if self.is_maker_active:
             if event.key() == Qt.Key.Key_Space:
-                if self.maker_step < len(self.playable_indices):
-                    self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
+                if self.maker_step < len(self.playable_indices): self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
             elif event.key() == Qt.Key.Key_Backspace:
-                if self.maker_step > 0:
-                    self.maker_step -= 1; self.maker_timestamps.pop(); self.player.setPosition(max(0, self.player.position()-3000)); self.render_maker_html(); self.lbl_maker_hint.setText("⏪ 已回退 3秒，请重录上一句")
+                if self.maker_step > 0: self.maker_step -= 1; self.maker_timestamps.pop(); self.player.setPosition(max(0, self.player.position()-3000)); self.render_maker_html(); self.lbl_maker_hint.setText("⏪ 已回退 3秒，请重录上一句")
         else: super().keyPressEvent(event)
 
     def handle_media_status(self, s):
         if s == QMediaPlayer.MediaStatus.EndOfMedia:
-            if self.is_maker_active: self.finish_recording_flow()
-            else: self.next_song()
+            if self.is_maker_active: 
+                self.finish_recording_flow()
+            # --- 修复点：单曲循环逻辑 ---
+            elif self.play_mode == 1: # 1 = 单曲循环
+                self.player.setPosition(0)
+                self.player.play()
+                # 确保视觉效果保持播放状态
+                self.vinyl.play()
+                self.btn_play.setText("⏸")
+                self.btn_play.start_breathing()
+            # --------------------------
+            else: 
+                self.next_song()
 
     def finish_recording_flow(self):
-        self.btn_rec.setChecked(False) # 关键：重置按钮状态
+        self.btn_rec.setChecked(False)
         self.toggle_record()
-        reply = QMessageBox.question(self, "录制结束", "歌曲播放完毕。\n保存录制的歌词吗？\n(No = 放弃并重置)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, "录制结束", "保存歌词吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes: self.save_lrc()
 
     def save_lrc(self):
@@ -478,7 +474,6 @@ class ModernPlayer(QMainWindow):
                 for i in range(min(len(self.maker_timestamps), len(self.playable_indices))):
                     f.write(f"[{self.maker_timestamps[i]//60000:02}:{(self.maker_timestamps[i]%60000)/1000:05.2f}]{self.maker_raw_lines[self.playable_indices[i]]}\n")
             QMessageBox.information(self,"成功",f"已保存: {p}")
-            # 自动切回播放
             self.load_lrc_view(self.playlist[self.current_index])
             self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入歌词工坊")
             self.player.setPosition(0); self.player.play(); self.vinyl.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing()
