@@ -1,3 +1,20 @@
+# --- 把这段代码放在 main.py 的最最最开头 ---
+import sys
+import traceback
+
+# 全局异常捕获：只要报错，就写入 txt 文件
+def exception_hook(exctype, value, tb):
+    error_msg = "".join(traceback.format_exception(exctype, value, tb))
+    with open("crash_error_log.txt", "w", encoding='utf-8') as f:
+        f.write(error_msg)
+    # 同时打印到控制台
+    print(error_msg)
+    # 保持窗口不关闭，让你能看到报错
+    input("程序崩溃了，按回车键退出...") 
+    sys.exit(1)
+
+sys.excepthook = exception_hook
+# ------------------------------------------
 name: Build Folder Mode
 
 on:
