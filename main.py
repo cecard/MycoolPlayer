@@ -4,6 +4,7 @@ import random
 import math
 import re
 import traceback
+import json  # 新增：用于保存配置
 
 # --- 崩溃记录 ---
 def exception_hook(exctype, value, tb):
@@ -29,6 +30,7 @@ SUPPORTED_FORMATS = (
 )
 ACCENT_COLOR = QColor(0, 255, 213)
 ACCENT_HEX = "#00FFD5"
+CONFIG_FILE = "settings.json" # 配置文件名
 
 # --- 1. 动态背景 ---
 class DynamicBackground(QWidget):
@@ -119,11 +121,7 @@ class VinylRecord(QWidget):
                 d = int(ir * 2); sc = img.scaled(d, d, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
                 p.drawPixmap(int(w//2 - sc.width()//2), int(h//2 - sc.height()//2), sc)
             p.setClipping(False)
-        
-        # --- 已移除中心黑点 ---
-        # p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
-        # --------------------
-
+        p.setBrush(QBrush(QColor(0, 0, 0))); p.drawEllipse(center, 5, 5)
         p.resetTransform(); p.translate(center)
         grad = QLinearGradient(-r, -r, r, r)
         grad.setColorAt(0, QColor(255, 255, 255, 20)); grad.setColorAt(1, QColor(255, 255, 255, 5))
@@ -222,6 +220,9 @@ class ModernPlayer(QMainWindow):
 
         self.old_pos = None
         self.init_ui()
+        
+        # 启动时尝试加载上次的配置
+        self.load_settings()
 
     def resizeEvent(self, event):
         self.bg_effect.setGeometry(0, 0, self.width(), self.height())
@@ -315,13 +316,52 @@ class ModernPlayer(QMainWindow):
         modes = [("🔁 列表循环", "按顺序"), ("🔂 单曲循环", "重复当前"), ("🔀 随机播放", "随机选择")]
         t, tip = modes[self.play_mode]; self.btn_mode.setText(t); self.btn_mode.setToolTip(tip)
 
+    # --- 核心修改：递归扫描文件夹 + 保存配置 ---
+    def load_music_from_dir(self, folder_path):
+        """ 递归扫描文件夹内的所有音频文件 """
+        self.playlist = []
+        self.track_list.clear()
+        # os.walk 实现递归扫描
+        for root, dirs, files in os.walk(folder_path):
+            for f in files:
+                if f.lower().endswith(SUPPORTED_FORMATS):
+                    full_path = os.path.join(root, f)
+                    self.playlist.append(full_path)
+                    # 列表显示文件名
+                    self.track_list.addItem(os.path.splitext(f)[0])
+        
+        if self.playlist:
+            self.current_index = 0
+            self.play_music(self.playlist[0])
+            # 暂停状态，等待用户操作
+            self.player.pause()
+            self.vinyl.pause()
+            self.btn_play.setText("▶")
+            self.btn_play.stop_breathing()
+
+    def save_settings(self, folder_path):
+        """ 保存最后一次打开的文件夹路径 """
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({'last_folder': folder_path}, f)
+        except: pass
+
+    def load_settings(self):
+        """ 启动时加载配置 """
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    last_folder = data.get('last_folder')
+                    if last_folder and os.path.exists(last_folder):
+                        self.load_music_from_dir(last_folder)
+            except: pass
+
     def select_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "目录")
+        d = QFileDialog.getExistingDirectory(self, "选择目录")
         if d:
-            self.playlist=[]; self.track_list.clear()
-            for f in os.listdir(d):
-                if f.lower().endswith(SUPPORTED_FORMATS): self.playlist.append(os.path.join(d,f)); self.track_list.addItem(os.path.splitext(f)[0])
-            if self.playlist: self.current_index=0; self.play_music(self.playlist[0])
+            self.load_music_from_dir(d)
+            self.save_settings(d)
 
     def select_files(self):
         fs,_ = QFileDialog.getOpenFileNames(self, "文件", "", "Audio (*.mp3 *.flac *.wav)")
@@ -449,21 +489,15 @@ class ModernPlayer(QMainWindow):
 
     def handle_media_status(self, s):
         if s == QMediaPlayer.MediaStatus.EndOfMedia:
-            if self.is_maker_active: 
-                self.finish_recording_flow()
-            elif self.play_mode == 1: # 1 = 单曲循环
-                self.player.setPosition(0)
-                self.player.play()
-                self.vinyl.play()
-                self.btn_play.setText("⏸")
-                self.btn_play.start_breathing()
-            else: 
-                self.next_song()
+            if self.is_maker_active: self.finish_recording_flow()
+            elif self.play_mode == 1:
+                self.player.setPosition(0); self.player.play(); self.vinyl.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing()
+            else: self.next_song()
 
     def finish_recording_flow(self):
         self.btn_rec.setChecked(False)
         self.toggle_record()
-        reply = QMessageBox.question(self, "录制结束", "保存歌词吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, "录制结束", "歌曲播放完毕。\n保存录制的歌词吗？\n(No = 放弃并重置)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes: self.save_lrc()
 
     def save_lrc(self):
