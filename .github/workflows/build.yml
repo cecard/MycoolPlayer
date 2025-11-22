@@ -1,12 +1,9 @@
-name: Build Full Format Player
+name: Debug Build
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -23,21 +20,17 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # 强制直接安装 PyQt6，防止读取 txt 失败
+        # 强制安装核心库
         pip install PyQt6 pyinstaller
 
-    - name: Build EXE
+    - name: Build EXE (Console Mode)
       run: |
-        # --hidden-import 确保 PyQt6 被打包进去
-        # --clean 清理旧的构建缓存
-        pyinstaller --noconfirm --onefile --windowed --clean --hidden-import=PyQt6 --name "MusicPlayer" main.py
+        # 变化1: 删除了 --windowed，改用 --console，这样如果报错你能看见
+        # 变化2: 增加了大量 hidden-import，强制打包多媒体和动画模块
+        pyinstaller --noconfirm --onefile --console --clean --name "MusicPlayer" --hidden-import=PyQt6 --hidden-import=PyQt6.QtCore --hidden-import=PyQt6.QtGui --hidden-import=PyQt6.QtWidgets --hidden-import=PyQt6.QtMultimedia --hidden-import=PyQt6.QtNetwork main.py
 
-    - name: Release and Upload
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/heads/')
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
-        files: dist/MusicPlayer.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: MusicPlayer-Debug
+        path: dist/MusicPlayer.exe
