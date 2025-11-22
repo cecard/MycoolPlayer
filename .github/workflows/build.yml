@@ -1,4 +1,4 @@
-name: Build Final Release
+name: Build Single EXE
 
 on:
   push:
@@ -22,15 +22,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install PyQt6 pyinstaller
 
-    - name: Build Final EXE
+    - name: Build Single File
       run: |
-        # --onedir: 文件夹模式 (最稳定，解决闪退)
-        # --windowed: 无窗口模式 (隐藏黑框，解决美观问题)
+        # 关键修改：
+        # --onefile: 单文件模式 (生成单独的 exe)
+        # --windowed: 无黑框
         # --clean: 清理缓存
-        pyinstaller --noconfirm --onedir --windowed --clean --name "MusicPlayer" --hidden-import=PyQt6 main.py
+        # --name: 指定文件名
+        pyinstaller --noconfirm --onefile --windowed --clean --name "MusicPlayer" --hidden-import=PyQt6 main.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MusicPlayer-Ultimate
-        path: dist/MusicPlayer
+        name: MusicPlayer-Single
+        # 单文件模式下，生成的文件直接在 dist 目录下，不是文件夹
+        path: dist/MusicPlayer.exe
