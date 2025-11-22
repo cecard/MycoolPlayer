@@ -1,4 +1,4 @@
-name: Build Final (With Icon)
+name: Build Final (Icon Fixed)
 
 on:
   push:
@@ -20,51 +20,49 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # 安装 pillow 库，用于生成 .ico 图标文件
+        # 安装 pillow 用于绘图
         pip install PyQt6 pyinstaller pillow
 
+    # --- 修复核心：使用 shell: python 直接运行代码 ---
     - name: Generate App Icon
+      shell: python
       run: |
-        # 创建一个临时 Python 脚本来生成 .ico 文件
-        # 我们画一个现代感的青色圆圈和白色音符
-        python -c "
         from PIL import Image, ImageDraw
 
         size = (256, 256)
-        # 创建透明背景图像
+        # 创建透明背景
         img = Image.new('RGBA', size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # 绘制赛博朋克青色的圆底
-        accent_color = (0, 255, 213, 255) # #00FFD5
+        # 1. 绘制赛博朋克青色圆底
+        # (0, 255, 213) 是 RGB, 255 是不透明度
+        accent_color = (0, 255, 213, 255) 
         draw.ellipse([(10, 10), (246, 246)], fill=accent_color)
 
-        # 绘制白色的极简音符线条
+        # 2. 绘制白色极简音符
         white = (255, 255, 255, 255)
-        width = 20
-        # 竖线 1
-        draw.rectangle([(80, 60), (80+width, 180)], fill=white)
-        # 竖线 2
-        draw.rectangle([(160, 60), (160+width, 180)], fill=white)
-        # 横梁
-        draw.rectangle([(80, 60), (160+width, 60+width)], fill=white)
-        # 音符头 1
-        draw.ellipse([(60, 160), (100, 200)], fill=white)
-        # 音符头 2
-        draw.ellipse([(140, 160), (180, 200)], fill=white)
+        # 音符左竖线
+        draw.rectangle([(70, 60), (90, 180)], fill=white)
+        # 音符右竖线
+        draw.rectangle([(150, 60), (170, 180)], fill=white)
+        # 音符横梁 (连接两竖线)
+        draw.rectangle([(70, 60), (170, 85)], fill=white)
+        # 左音符头
+        draw.ellipse([(50, 160), (110, 210)], fill=white)
+        # 右音符头
+        draw.ellipse([(130, 160), (190, 210)], fill=white)
 
-        # 保存为 .ico 格式
+        # 保存为 .ico
         img.save('app.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
-        print('✅ app.ico generated successfully!')
-        "
+        print("✅ Icon generated successfully!")
 
     - name: Build Final EXE
       run: |
-        # 关键修改：增加了 --icon="app.ico" 参数
+        # --icon="app.ico" 将刚才生成的图标烙印上去
         pyinstaller --noconfirm --onefile --windowed --clean --name "MusicPlayer" --icon="app.ico" --hidden-import=PyQt6 main.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MusicPlayer-Final-v2
+        name: MusicPlayer-Final-Icon
         path: dist/MusicPlayer.exe
