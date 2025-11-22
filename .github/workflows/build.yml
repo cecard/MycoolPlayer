@@ -1,4 +1,4 @@
-name: Build EXE
+name: Build Music Player
 
 on:
   push:
@@ -10,28 +10,26 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v4  # 这里更新到了 v4
+    - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v5 # 这里更新到了 v5
+      uses: actions/setup-python@v4
       with:
-        python-version: "3.10"
+        python-version: '3.10'
 
+    # 核心修改 1: 直接在这里强制安装 PyQt6，不依赖 txt 文件
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pygame pyinstaller
+        pip install PyQt6 pyinstaller
 
-    - name: Check file existence
-      run: |
-        if (Test-Path main.py) { Write-Host "main.py found" } else { Write-Error "main.py NOT found!" }
-
+    # 核心修改 2: 增加 hidden-import 参数，强制 PyInstaller 把 PyQt6 打包进去
     - name: Build EXE
       run: |
-        pyinstaller --onefile --noconsole --name="CoolPlayer" main.py
+        pyinstaller --noconfirm --onefile --windowed --clean --hidden-import=PyQt6 --name "MusicPlayer" main.py
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4 # 关键修复：这里必须是 v4
+      uses: actions/upload-artifact@v4
       with:
-        name: MyCoolPlayer_EXE
-        path: dist/CoolPlayer.exe
+        name: MusicPlayer-Executable
+        path: dist/MusicPlayer.exe
