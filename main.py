@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QUrl, QPoint, QPointF, QTimer, QPropertyAnimation, pyqtProperty, QEasingCurve, QSize
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtGui import (QIcon, QPixmap, QPainter, QColor, QPen, QFont, 
-                         QBrush, QLinearGradient, QTextCursor, QPainterPath, QTextBlockFormat)
+                         QBrush, QLinearGradient, QTextCursor, QPainterPath)
 
 # --- 全局配置 ---
 SUPPORTED_FORMATS = (
@@ -259,7 +259,6 @@ class ModernPlayer(QMainWindow):
 
         self.stack = QStackedWidget()
         
-        # Play Page
         page_play = QWidget(); ph = QHBoxLayout(page_play); ph.setSpacing(40)
         self.vinyl = VinylRecord()
         vinyl_container = QVBoxLayout(); vinyl_container.addStretch(); vinyl_container.addWidget(self.vinyl, 0, Qt.AlignmentFlag.AlignCenter); vinyl_container.addStretch()
@@ -267,7 +266,6 @@ class ModernPlayer(QMainWindow):
         lrc_container = QVBoxLayout()
         self.lbl_lrc_pre = QLabel(""); self.lbl_lrc_cur = QLabel("MUSE PLAYER"); self.lbl_lrc_next = QLabel("")
         self.lbl_lrc_pre.setStyleSheet("color:#666; font-size:16px;")
-        # 歌词高亮颜色优化
         self.lbl_lrc_cur.setStyleSheet(f"color:{ACCENT_HEX}; font-size:32px; font-weight:900;")
         glow = QGraphicsDropShadowEffect(self.lbl_lrc_cur); glow.setBlurRadius(20); glow.setColor(ACCENT_COLOR); glow.setOffset(0, 0)
         self.lbl_lrc_cur.setGraphicsEffect(glow)
@@ -276,7 +274,6 @@ class ModernPlayer(QMainWindow):
         lrc_container.addStretch(); lrc_container.addWidget(self.lbl_lrc_pre); lrc_container.addSpacing(25); lrc_container.addWidget(self.lbl_lrc_cur); lrc_container.addSpacing(25); lrc_container.addWidget(self.lbl_lrc_next); lrc_container.addStretch()
         ph.addLayout(vinyl_container, 4); ph.addLayout(lrc_container, 6)
 
-        # Maker Page
         page_maker = QWidget(); mv = QVBoxLayout(page_maker); mv.setContentsMargins(50, 20, 50, 20)
         mv.addWidget(QLabel("🎹 智能歌词制作", styleSheet="font-size:24px; font-weight:bold; color:white;"))
         self.txt_maker = QTextEdit()
@@ -307,7 +304,6 @@ class ModernPlayer(QMainWindow):
         self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setCursor(Qt.CursorShape.PointingHandCursor); self.slider.sliderMoved.connect(self.player.setPosition)
         prog.addWidget(self.lbl_time, 0, Qt.AlignmentFlag.AlignRight); prog.addWidget(self.slider)
         bh.addWidget(self.btn_mode); bh.addStretch(); bh.addLayout(ctrl); bh.addStretch(); bh.addLayout(prog); bh.setStretch(4, 1)
-        
         root.addWidget(title_bar); root.addLayout(content); root.addWidget(bottom_bar)
 
     def toggle_play_mode(self): self.play_mode = (self.play_mode + 1) % 3; self.update_mode_btn()
@@ -351,30 +347,24 @@ class ModernPlayer(QMainWindow):
         else: self.player.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
 
     def load_lrc_view(self, path):
-        # 【关键修复】：多编码尝试，解决歌词不显示问题
         p = os.path.splitext(path)[0]+".lrc"; self.lyrics_map={}; self.lyrics_times=[]
         self.lbl_lrc_cur.setText("暂无歌词"); self.lbl_lrc_pre.clear(); self.lbl_lrc_next.clear()
         if os.path.exists(p):
-            # 依次尝试 utf-8-sig (带BOM), utf-8, gbk (中文常备), gb18030
             for enc in ['utf-8-sig', 'utf-8', 'gbk', 'gb18030']:
                 try:
-                    with open(p,'r',encoding=enc) as f:
+                    temp_map = {}; temp_times = []
+                    with open(p, 'r', encoding=enc) as f:
                         for l in f:
                             l = l.strip()
                             if "]" in l:
-                                t,x = l.split("]",1); t = t.strip("[")
-                                # 容错处理：确保时间格式正确
-                                m = 0; s = 0
-                                if ":" in t:
-                                    parts = t.split(":")
-                                    if len(parts) >= 2:
-                                        m = int(parts[0])
-                                        s = float(parts[1])
-                                ms = int(m*60000 + s*1000)
-                                self.lyrics_map[ms]=x.strip(); self.lyrics_times.append(ms)
-                    # 如果成功读取到歌词，跳出循环
-                    if self.lyrics_times:
-                        self.lyrics_times.sort(); self.lbl_lrc_cur.setText("歌词加载成功"); break
+                                t_str, content = l.split("]", 1); t_str = t_str.strip("[")
+                                if ":" in t_str:
+                                    m_str, s_str = t_str.split(":", 1)
+                                    ms = int(int(m_str) * 60000 + float(s_str) * 1000)
+                                    temp_map[ms] = content.strip(); temp_times.append(ms)
+                    if temp_times:
+                        self.lyrics_map = temp_map; self.lyrics_times = sorted(temp_times)
+                        self.lbl_lrc_cur.setText("歌词已加载"); break 
                 except: continue
 
     def update_ui_progress(self, pos):
@@ -382,8 +372,7 @@ class ModernPlayer(QMainWindow):
         m,s = divmod(pos//1000,60); dm,ds = divmod(self.player.duration()//1000,60)
         self.lbl_time.setText(f"{m:02}:{s:02} / {dm:02}:{ds:02}")
         if not self.is_maker_active and self.lyrics_times:
-            # 优化查找逻辑，确保第一句也能显示
-            ts = [t for t in self.lyrics_times if t<=pos + 200] # 增加200ms容错，提前显示一点点
+            ts = [t for t in self.lyrics_times if t<=pos + 200]
             if ts:
                 cur = ts[-1]; idx = self.lyrics_times.index(cur)
                 self.lbl_lrc_cur.setText(self.lyrics_map[cur])
@@ -392,12 +381,10 @@ class ModernPlayer(QMainWindow):
 
     def toggle_view(self):
         if self.stack.currentIndex()==0: 
-            # 进入制作模式：暂停并归零
             self.stack.setCurrentIndex(1); self.btn_switch_mode.setText("🎵 返回播放")
             self.player.pause(); self.player.setPosition(0); self.vinyl.pause()
             self.btn_play.setText("▶"); self.btn_play.stop_breathing()
-        else: 
-            self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入制作")
+        else: self.stack.setCurrentIndex(0); self.btn_switch_mode.setText("🛠️ 进入制作")
 
     def is_skippable(self, line):
         line = line.strip()
@@ -417,7 +404,6 @@ class ModernPlayer(QMainWindow):
                 if not self.is_skippable(l): self.playable_indices.append(i)
             if not self.playable_indices: self.btn_rec.setChecked(False); QMessageBox.warning(self,"错误","未识别到有效歌词"); return
             self.maker_timestamps = []; self.maker_step = 0; self.is_maker_active = True; self.txt_maker.setReadOnly(True)
-            # 点击录制时，才开始播放
             self.player.play(); self.btn_play.setText("⏸"); self.btn_play.start_breathing(); self.vinyl.play()
             self.btn_rec.setText("⏹ 停止 / Backspace 回退"); self.btn_rec.start_breathing(); self.render_maker_html(); self.setFocus()
         else:
@@ -441,7 +427,6 @@ class ModernPlayer(QMainWindow):
         if t_idx != -1:
             cursor = self.txt_maker.textCursor(); cursor.movePosition(QTextCursor.MoveOperation.Start); cursor.movePosition(QTextCursor.MoveOperation.NextBlock, n=t_idx)
             self.txt_maker.setTextCursor(cursor)
-            # 智能居中滚动
             scrollbar = self.txt_maker.verticalScrollBar()
             rect = self.txt_maker.cursorRect(cursor)
             target = rect.top() + scrollbar.value() - (self.txt_maker.viewport().height()/2) + (rect.height()/2)
@@ -452,13 +437,9 @@ class ModernPlayer(QMainWindow):
     def keyPressEvent(self, event):
         if self.is_maker_active:
             if event.key() == Qt.Key.Key_Space:
-                if self.maker_step < len(self.playable_indices):
-                    self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
+                if self.maker_step < len(self.playable_indices): self.maker_timestamps.append(self.player.position()); self.maker_step += 1; self.render_maker_html()
             elif event.key() == Qt.Key.Key_Backspace:
-                if self.maker_step > 0:
-                    self.maker_step -= 1; self.maker_timestamps.pop()
-                    self.player.setPosition(max(0, self.player.position()-3000)) # 回退3秒
-                    self.render_maker_html(); self.lbl_maker_hint.setText("⏪ 已回退 3秒，请重录上一句")
+                if self.maker_step > 0: self.maker_step -= 1; self.maker_timestamps.pop(); self.player.setPosition(max(0, self.player.position()-3000)); self.render_maker_html(); self.lbl_maker_hint.setText("⏪ 已回退 3秒，请重录上一句")
         else: super().keyPressEvent(event)
 
     def handle_media_status(self, s):
@@ -467,18 +448,36 @@ class ModernPlayer(QMainWindow):
             else: self.next_song()
 
     def finish_recording_flow(self):
-        self.toggle_record() # 停止录制状态
-        reply = QMessageBox.question(self, "录制结束", "歌曲播放完毕。\n保存录制的歌词吗？\n(No = 放弃并重置)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        # 【关键修复】强制把按钮弹起来，避免 toggle_record 误判为“开始录制”而清空数据
+        self.btn_rec.setChecked(False) 
+        self.toggle_record() 
+        
+        reply = QMessageBox.question(self, "录制结束", "保存歌词吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes: self.save_lrc()
 
     def save_lrc(self):
         if not self.playlist: return
+        # 检查是否有数据
+        if not self.maker_timestamps:
+            QMessageBox.warning(self, "错误", "录制数据为空，可能未按空格键打点。"); return
+
         p = os.path.splitext(self.playlist[self.current_index])[0]+".lrc"
         try:
             with open(p,'w',encoding='utf-8') as f:
                 for i in range(min(len(self.maker_timestamps), len(self.playable_indices))):
                     f.write(f"[{self.maker_timestamps[i]//60000:02}:{(self.maker_timestamps[i]%60000)/1000:05.2f}]{self.maker_raw_lines[self.playable_indices[i]]}\n")
-            QMessageBox.information(self,"成功",f"已保存: {p}"); self.load_lrc_view(self.playlist[self.current_index])
+            QMessageBox.information(self,"成功",f"已保存: {p}")
+            
+            # 【关键特性】一条龙服务：切回播放界面 -> 重置 -> 播放
+            self.load_lrc_view(self.playlist[self.current_index])
+            self.stack.setCurrentIndex(0)
+            self.btn_switch_mode.setText("🛠️ 进入歌词工坊")
+            self.player.setPosition(0)
+            self.player.play()
+            self.vinyl.play()
+            self.btn_play.setText("⏸")
+            self.btn_play.start_breathing()
+            
         except Exception as e: QMessageBox.warning(self,"错误",str(e))
 
     def next_song(self): self.skip(1)
