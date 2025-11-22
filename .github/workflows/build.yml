@@ -1,9 +1,12 @@
-name: Build Music Player
+name: Build Full Format Player
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,19 +20,24 @@ jobs:
       with:
         python-version: '3.10'
 
-    # 核心修改 1: 直接在这里强制安装 PyQt6，不依赖 txt 文件
-    - name: Install dependencies
+    - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
+        # 强制直接安装 PyQt6，防止读取 txt 失败
         pip install PyQt6 pyinstaller
 
-    # 核心修改 2: 增加 hidden-import 参数，强制 PyInstaller 把 PyQt6 打包进去
     - name: Build EXE
       run: |
+        # --hidden-import 确保 PyQt6 被打包进去
+        # --clean 清理旧的构建缓存
         pyinstaller --noconfirm --onefile --windowed --clean --hidden-import=PyQt6 --name "MusicPlayer" main.py
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    - name: Release and Upload
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/heads/')
       with:
-        name: MusicPlayer-Executable
-        path: dist/MusicPlayer.exe
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        files: dist/MusicPlayer.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
